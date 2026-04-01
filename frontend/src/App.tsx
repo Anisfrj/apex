@@ -8,8 +8,9 @@ import InsidersPage from './pages/InsidersPage'
 import AlertsPage from './pages/AlertsPage'
 import IdeasPage from './pages/IdeasPage'
 import StockDetailPage from './pages/StockDetailPage'
+import EquityScreenerPage from './pages/EquityScreenerPage'
 
-type Page = 'dashboard' | 'macro' | 'sectors' | 'crypto' | 'insiders' | 'alerts' | 'ideas'
+type Page = 'dashboard' | 'macro' | 'sectors' | 'crypto' | 'insiders' | 'alerts' | 'ideas' | 'screener'
 
 export default function App() {
   const [page, setPage] = useState<Page>('dashboard')
@@ -35,6 +36,7 @@ export default function App() {
       case 'insiders': return <InsidersPage onStockClick={handleStockClick} />
       case 'alerts': return <AlertsPage />
       case 'ideas': return <IdeasPage />
+              case 'screener': return <EquityScreenerPage />
     }
   }
 
