@@ -48,7 +48,7 @@ export default function EquityScreenerPage() {
       <div className="card p-4 space-y-3">
         <div className="grid grid-cols-3 gap-3">
           <div>
-            label className="text-xs text-zinc-400 mb-1 block">Secteur</label>
+            <label className="text-xs text-zinc-400 mb-1 block">Secteur</label>
             <select 
               value={sector} 
               onChange={(e) => setSector(e.target.value)}
@@ -69,7 +69,7 @@ export default function EquityScreenerPage() {
             </select>
           </div>
           <div>
-            label className="text-xs text-zinc-400 mb-1 block">Market Cap Min</label>
+            <label className="text-xs text-zinc-400 mb-1 block">Market Cap Min</label>
             <input 
               type="number" 
               value={minMarketCap}
