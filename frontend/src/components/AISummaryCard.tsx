@@ -12,7 +12,7 @@ export default function AISummaryCard({ symbol }: Props) {
     return (
       <div className="col-span-3 flex items-center justify-center h-32 rounded-xl border border-zinc-800 bg-zinc-900/50">
         <Loader2 className="animate-spin text-zinc-500 mr-3" size={20} />
-        <span className="text-zinc-400 text-sm">Analyse IA en cours pour {symbol}…</span>
+        <span className="text-zinc-400 text-sm">Analyse IA en cours pour {symbol}</span>
       </div>
     )
   }
@@ -20,7 +20,7 @@ export default function AISummaryCard({ symbol }: Props) {
   if (error || !data) {
     return (
       <div className="col-span-3 flex items-center justify-center h-20 rounded-xl border border-red-900/30 bg-red-950/20">
-        <span className="text-red-400 text-sm">Analyse IA indisponible — vérifiez GROQ_API_KEY</span>
+        <span className="text-red-400 text-sm">Analyse IA indisponible</span>
       </div>
     )
   }
@@ -28,7 +28,7 @@ export default function AISummaryCard({ symbol }: Props) {
   const cards = [
     {
       title: 'The Moat',
-      label: '🟢 Avantage Concurrentiel',
+      label: '\u{1F7E2} Avantage Concurrentiel',
       icon: Shield,
       points: data.moat.filter(Boolean),
       border: 'border-emerald-500/20 hover:border-emerald-500/50',
@@ -37,7 +37,7 @@ export default function AISummaryCard({ symbol }: Props) {
     },
     {
       title: 'Red Flags',
-      label: '🔴 Risques',
+      label: '\u{1F534} Risques',
       icon: AlertTriangle,
       points: data.risks.filter(Boolean),
       border: 'border-red-500/20 hover:border-red-500/50',
@@ -46,7 +46,7 @@ export default function AISummaryCard({ symbol }: Props) {
     },
     {
       title: 'Catalysts',
-      label: '⚡ Catalyseurs',
+      label: '\u26A1 Catalyseurs',
       icon: Zap,
       points: data.catalysts.filter(Boolean),
       border: 'border-amber-500/20 hover:border-amber-500/50',
@@ -62,7 +62,7 @@ export default function AISummaryCard({ symbol }: Props) {
         return (
           <div
             key={card.title}
-            className={`rounded-xl border bg-zinc-900/60 backdrop-blur-sm p-5 shadow-lg transition-all duration-200 ${card.border}`}
+            className={'rounded-xl border bg-zinc-900/60 backdrop-blur-sm p-5 shadow-lg transition-all duration-200 ' + card.border}
           >
             <div className="flex items-center gap-2 mb-4">
               <Icon size={16} className={card.iconColor} />
@@ -71,7 +71,7 @@ export default function AISummaryCard({ symbol }: Props) {
             <ul className="space-y-2">
               {card.points.map((point, i) => (
                 >
-                  <span className={`mt-1.5 h-1.5 w-1.5 rounded-full shrink-0 ${card.dotColor}`} />
+                  <span className={'mt-1.5 h-1.5 w-1.5 rounded-full shrink-0 ' + card.dotColor} />
                   {point}
                 </li>
               ))}
