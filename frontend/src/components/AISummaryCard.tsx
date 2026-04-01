@@ -1,4 +1,3 @@
-// frontend/src/components/AISummaryCard.tsx
 import { Shield, AlertTriangle, Zap, Loader2 } from 'lucide-react'
 import { useAISummary } from '@/hooks/useData'
 
@@ -35,7 +34,6 @@ export default function AISummaryCard({ symbol }: Props) {
       border: 'border-emerald-500/20 hover:border-emerald-500/50',
       iconColor: 'text-emerald-400',
       dotColor: 'bg-emerald-400',
-      glow: 'shadow-emerald-500/5',
     },
     {
       title: 'Red Flags',
@@ -45,7 +43,6 @@ export default function AISummaryCard({ symbol }: Props) {
       border: 'border-red-500/20 hover:border-red-500/50',
       iconColor: 'text-red-400',
       dotColor: 'bg-red-400',
-      glow: 'shadow-red-500/5',
     },
     {
       title: 'Catalysts',
@@ -55,7 +52,6 @@ export default function AISummaryCard({ symbol }: Props) {
       border: 'border-amber-500/20 hover:border-amber-500/50',
       iconColor: 'text-amber-400',
       dotColor: 'bg-amber-400',
-      glow: 'shadow-amber-500/5',
     },
   ]
 
@@ -66,7 +62,7 @@ export default function AISummaryCard({ symbol }: Props) {
         return (
           <div
             key={card.title}
-            className={`rounded-xl border bg-zinc-900/60 backdrop-blur-sm p-5 shadow-lg transition-all duration-200 ${card.border} ${card.glow}`}
+            className={`rounded-xl border bg-zinc-900/60 backdrop-blur-sm p-5 shadow-lg transition-all duration-200 ${card.border}`}
           >
             <div className="flex items-center gap-2 mb-4">
               <Icon size={16} className={card.iconColor} />
