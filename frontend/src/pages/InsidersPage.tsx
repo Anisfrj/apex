@@ -16,7 +16,11 @@ function scoreColor(score: number | null | undefined): string {
   return 'text-red-400'
 }
 
-export default function InsidersPage() {
+interface Props {
+  onStockClick?: (symbol: string) => void
+}
+
+export default function InsidersPage({ onStockClick }: Props) {
   const [days, setDays] = useState(7)
   const [minAmount, setMinAmount] = useState(0)
   const { data, isLoading, error } = useInsiders(days, minAmount)
@@ -91,8 +95,13 @@ export default function InsidersPage() {
               <tbody>
                 {data.map((tx, i) => (
                   <tr key={i} className="table-row">
-                    <td className="py-2.5 px-4 font-mono font-bold text-apex-400">
-                      {tx.symbol}
+                    <td className="py-2.5 px-4">
+                      <button
+                        onClick={() => onStockClick?.(tx.symbol)}
+                        className="font-mono font-bold text-apex-400 hover:text-blue-300 hover:underline transition cursor-pointer"
+                      >
+                        {tx.symbol}
+                      </button>
                     </td>
                     <td className="py-2.5 px-4 text-zinc-300 max-w-[180px] truncate">
                       {tx.company_name ?? '—'}
@@ -113,12 +122,12 @@ export default function InsidersPage() {
                       {fmt(tx.total_value)}
                     </td>
                     <td className="py-2.5 px-4 text-center">
-                      <span className={`font-mono ${scoreColor(tx.score)}`}>
-                        {tx.score != null ? tx.score.toFixed(0) : '—'}
+                      <span className={`font-mono ${scoreColor((tx as any).score)}`}>
+                        {(tx as any).score != null ? (tx as any).score.toFixed(0) : '—'}
                       </span>
                     </td>
                     <td className="py-2.5 px-4 text-center text-zinc-300">
-                      {tx.score_label ?? '—'}
+                      {(tx as any).score_label ?? '—'}
                     </td>
                     <td className="py-2.5 px-4 text-zinc-500 max-w-[200px] truncate">
                       {tx.rejection_reason ?? '—'}
@@ -132,7 +141,7 @@ export default function InsidersPage() {
             </table>
           </div>
           <div className="px-4 py-2 border-t border-zinc-800 text-[10px] text-zinc-600">
-            {data.length} transaction(s) trouvée(s)
+            {data.length} transaction(s) trouvée(s) — <span className="text-blue-400">Cliquez sur un symbole pour voir le détail</span>
           </div>
         </div>
       )}
