@@ -8,7 +8,7 @@ import {
   Zap,
 } from 'lucide-react'
 
-type Page = 'dashboard' | 'macro' | 'sectors' | 'crypto' | 'insiders' | 'alerts'
+type Page = 'dashboard' | 'macro' | 'sectors' | 'crypto' | 'insiders' | 'alerts' | 'screener'
 
 const NAV_ITEMS: { id: Page; label: string; icon: typeof LayoutDashboard }[] = [
   { id: 'dashboard', label: 'Vue Globale', icon: LayoutDashboard },
@@ -17,6 +17,7 @@ const NAV_ITEMS: { id: Page; label: string; icon: typeof LayoutDashboard }[] = [
   { id: 'crypto', label: 'Screener Crypto', icon: Bitcoin },
   { id: 'insiders', label: 'Traqueur Initiés', icon: UserCheck },
   { id: 'alerts', label: 'Historique Alertes', icon: Bell },
+    { id: 'screener', label: 'Screener Actions', icon: BarChart3 },
 ]
 
 interface SidebarProps {
