@@ -159,6 +159,13 @@ export interface AlertEnriched extends AlertLogEntry {
   sector_name?: string | null
 }
 
+export interface AISummary {
+  symbol: string
+  moat: string[]
+  risks: string[]
+  catalysts: string[]
+}
+
 // ── API client ─────────────────────────────────────────
 
 export const api = {
@@ -216,6 +223,10 @@ export const api = {
       status: params?.status,
       limit: params?.limit,
     }),
+  // Résumé IA d'un ticker (Groq LLM)
+  getAISummary: (symbol: string) =>
+    fetchAPI<AISummary>(`/stocks/${symbol}/ai-summary`),
+  
 
   // Triggers manuels
   triggerSyncMacro: () => postAPI('/trigger/sync-macro'),

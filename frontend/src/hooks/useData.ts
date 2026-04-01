@@ -71,3 +71,12 @@ export function useIdeas(label?: string, limit: number = 10) {
     staleTime: 60_000,
   })
 }
+export function useAISummary(symbol: string) {
+  return useQuery({
+    queryKey: ['ai-summary', symbol],
+    queryFn: () => api.getAISummary(symbol),
+    enabled: !!symbol,
+    staleTime: 5 * 60 * 1000, // Cache 5 minutes (appel LLM = pas gratuit)
+    retry: 1,
+  })
+}

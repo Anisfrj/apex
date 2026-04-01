@@ -17,6 +17,7 @@ from app.services.ideas import (
     get_idea_detail,
     generate_ideas_from_signals
 )
+from ..services.ai_summary import generate_ai_summary
 logger = get_logger("api")
 
 router = APIRouter(prefix="/api", tags=["dashboard"])
@@ -651,3 +652,29 @@ async def stocks_screener(
         has_more=page * page_size < total,
     )
 
+# ════════════════════════════════════════════
+# AI SUMMARY — Résumé LLM d'un ticker
+# ════════════════════════════════════════════
+
+@router.get("/stocks/{symbol}/ai-summary")
+async def get_ai_summary(symbol: str, db: AsyncSession = Depends(get_db)):
+    """Génère un résumé analyste IA pour un ticker via Groq LLM."""
+    symbol = symbol.upper()
+
+    # Récupérer les derniers fondamentaux du ticker depuis la DB
+    result = await db.execute(
+        select(StockFundamentals)
+        .where(StockFundamentals.symbol == symbol)
+        .order_by(StockFundamentals.fiscal_date.desc())
+        .limit(1)
+    )
+    stock = result.scalar_one_or_none()
+
+    summary = await generate_ai_summary(
+        symbol=symbol,
+        company_name=stock.company_name if stock else None,
+        roic=stock.roic if stock else None,
+        fcf=stock.free_cash_flow if stock else None,
+        sector=stock.sector if stock else None,
+    )
+    return {"symbol": symbol, **summary}

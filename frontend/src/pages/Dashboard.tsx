@@ -16,6 +16,7 @@ import {
   TrendingDown,
   Star,
 } from 'lucide-react'
+import AISummaryCard from '@/components/AISummaryCard'
 
 function formatNum(n: number | null | undefined): string {
   if (n == null) return '—'
@@ -26,6 +27,7 @@ function formatNum(n: number | null | undefined): string {
 }
 
 const TOP_PICK_SCORE_THRESHOLD = 75
+const [selectedTicker, setSelectedTicker] = useState<string>('AAPL')
 
 export default function Dashboard() {
   const status = useStatus()
@@ -70,7 +72,24 @@ export default function Dashboard() {
           </span>
         </div>
       </div>
-
+      {/* === AI EXECUTIVE SUMMARY === */}
+      <div className="space-y-3">
+        <div className="flex items-center gap-3">
+          <h2 className="text-lg font-semibold text-zinc-200">AI Executive Summary</h2>
+            <select
+              value={selectedTicker}
+              onChange={(e) => setSelectedTicker(e.target.value)}
+              className="ml-auto bg-zinc-800 border border-zinc-700 text-zinc-300 text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:border-zinc-500"
+              >
+              {['AAPL', 'MSFT', 'NVDA', 'META', 'GOOGL', 'AMZN'].map((t) => (
+              <option key={t} value={t}>{t}</option>
+              ))}
+            </select>
+        </div>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <AISummaryCard symbol={selectedTicker} />
+      </div>
+      </div>
       {/* KPI Cards */}
       <div className="grid grid-cols-5 gap-4">
         <div className="card">
