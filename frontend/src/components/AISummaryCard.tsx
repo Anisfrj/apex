@@ -28,7 +28,7 @@ export default function AISummaryCard({ symbol }: Props) {
   const cards = [
     {
       title: 'The Moat',
-      label: '\u{1F7E2} Avantage Concurrentiel',
+      label: 'Avantage Concurrentiel',
       icon: Shield,
       points: data.moat.filter(Boolean),
       border: 'border-emerald-500/20 hover:border-emerald-500/50',
@@ -37,7 +37,7 @@ export default function AISummaryCard({ symbol }: Props) {
     },
     {
       title: 'Red Flags',
-      label: '\u{1F534} Risques',
+      label: 'Risques',
       icon: AlertTriangle,
       points: data.risks.filter(Boolean),
       border: 'border-red-500/20 hover:border-red-500/50',
@@ -46,7 +46,7 @@ export default function AISummaryCard({ symbol }: Props) {
     },
     {
       title: 'Catalysts',
-      label: '\u26A1 Catalyseurs',
+      label: 'Catalyseurs',
       icon: Zap,
       points: data.catalysts.filter(Boolean),
       border: 'border-amber-500/20 hover:border-amber-500/50',
@@ -70,7 +70,7 @@ export default function AISummaryCard({ symbol }: Props) {
             </div>
             <ul className="space-y-2">
               {card.points.map((point, i) => (
-                >
+                <li key={i} className="flex items-start gap-2 text-sm text-zinc-400">
                   <span className={'mt-1.5 h-1.5 w-1.5 rounded-full shrink-0 ' + card.dotColor} />
                   {point}
                 </li>
