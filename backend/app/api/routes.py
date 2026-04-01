@@ -678,3 +678,77 @@ async def get_ai_summary(symbol: str, db: AsyncSession = Depends(get_db)):
         sector=stock.sector if stock else None,
     )
     return {"symbol": symbol, **summary}
+ # Ajouter dans routes.py
+
+@router.get("/screener/equities")
+async def get_equity_screener(
+    sector: str | None = None,
+    min_market_cap: float | None = None,
+    max_pe: float | None = None,
+    min_roe: float | None = None,
+    above_sma200: bool | None = None,
+    min_price: float | None = None,
+    max_price: float | None = None,
+    search: str | None = None,
+    limit: int = 100
+):
+    """
+    Screener actions avec filtres
+    """
+    conn = get_db_connection()
+    try:
+        conditions = ["1=1"]
+        params = []
+        
+        if sector:
+            params.append(sector)
+            conditions.append(f"sector = ${len(params)}")
+        
+        if min_market_cap:
+            params.append(min_market_cap)
+            conditions.append(f"market_cap >= ${len(params)}")
+        
+        if max_pe:
+            params.append(max_pe)
+            conditions.append(f"pe_ratio <= ${len(params)} AND pe_ratio > 0")
+        
+        if min_roe:
+            params.append(min_roe)
+            conditions.append(f"roe >= ${len(params)}")
+        
+        if above_sma200:
+            conditions.append("price > sma_200 AND sma_200 IS NOT NULL")
+        
+        if min_price:
+            params.append(min_price)
+            conditions.append(f"price >= ${len(params)}")
+        
+        if max_price:
+            params.append(max_price)
+            conditions.append(f"price <= ${len(params)}")
+        
+        if search:
+            params.append(f"%{search.upper()}%")
+            conditions.append(f"(symbol ILIKE ${len(params)} OR company_name ILIKE ${len(params)})")
+        
+        query = f"""
+            SELECT * FROM equities_fundamentals
+            WHERE {' AND '.join(conditions)}
+            ORDER BY market_cap DESC NULLS LAST
+            LIMIT {min(limit, 500)}
+        """
+        
+        rows = await conn.fetch(query, *params)
+        return [dict(r) for r in rows]
+    finally:
+        await conn.close()
+
+@router.post("/trigger/sync-equities")
+async def trigger_sync_equities():
+    """Déclenche scraping equity screener"""
+    from app.modules.equities_screener import sync_equities_screener
+    # En prod: envoyer à Celery
+    # sync_equities_screener.delay()
+    # En dev: exécuter direct
+    count = await sync_equities_screener()
+    return {"status": "success", "scraped": count}
