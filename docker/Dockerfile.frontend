@@ -4,7 +4,10 @@ WORKDIR /app
 COPY frontend/package.json ./
 RUN npm install
 COPY frontend/ .
-RUN npm run build
+# Cache bust - force rebuild
+ARG CACHEBUST=1
+RUN echo "Cache bust: $CACHEBUST"
+RUN npm run build && echo "BUILD OK" && ls -la /app/dist/
 
 FROM nginx:alpine
 COPY --from=builder /app/dist /usr/share/nginx/html
