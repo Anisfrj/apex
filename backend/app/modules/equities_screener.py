@@ -1,4 +1,4 @@
-"""
+""" 
 Module Equity Screener — Scraping S&P 500 + NASDAQ 100 via yfinance
 """
 import yfinance as yf
@@ -6,13 +6,16 @@ import pandas as pd
 from typing import List, Dict, Optional
 from datetime import datetime
 import asyncio
-from ..core.database import get_db_connection
+import asyncpg
+from ..core.config import get_settings
 
 def get_sp500_tickers() -> List[str]:
     """Récupère S&P 500 depuis Wikipedia"""
     try:
         url = 'https://en.wikipedia.org/wiki/List_of_S%26P_500_companies'
-                tables = pd.read_html(url, storage_options={'User-Agent': 'Mozilla/5.0'})
+        tables = pd.read_html(url, storage_options={'User-Agent': 'Mozilla/5.0'})
+        df = tables[0]
+        return df['Symbol'].tolist()
     except Exception as e:
         print(f"Erreur scraping S&P 500: {e}")
         return []
@@ -21,7 +24,11 @@ def get_nasdaq100_tickers() -> List[str]:
     """Récupère NASDAQ 100 depuis Wikipedia"""
     try:
         url = 'https://en.wikipedia.org/wiki/Nasdaq-100'
-        tables = pd.read_html(url, storage_options={'User-Agent': 'Mozilla/5.0'})        # Index peut varier, chercher table avec colonne "Ticker"
+        tables = pd.read_html(url, storage_options={'User-Agent': 'Mozilla/5.0'})
+        for table in tables:
+            if 'Ticker' in table.columns:
+                return table['Ticker'].tolist()
+        return []
     except Exception as e:
         print(f"Erreur scraping NASDAQ 100: {e}")
         return []
@@ -60,7 +67,7 @@ def scrape_ticker_fundamentals(symbol: str) -> Optional[Dict]:
             'avg_volume': info.get('averageVolume'),
             'beta': info.get('beta'),
             'dividend_yield': info.get('dividendYield'),
-            'earnings_date': None,  # Timestamp, peut être None
+            'earnings_date': None,
             'updated_at': datetime.now()
         }
         
@@ -78,7 +85,14 @@ def scrape_ticker_fundamentals(symbol: str) -> Optional[Dict]:
 
 async def upsert_equity_fundamental(data: Dict):
     """Upsert dans PostgreSQL"""
-    conn = get_db_connection()
+    settings = get_settings()
+    conn = await asyncpg.connect(
+        host=settings.postgres_host,
+        port=5432,
+        user=settings.postgres_user,
+        password=settings.postgres_password,
+        database=settings.postgres_db
+    )
     try:
         await conn.execute("""
             INSERT INTO equities_fundamentals (
