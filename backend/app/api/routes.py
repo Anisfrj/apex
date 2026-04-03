@@ -747,8 +747,7 @@ async def get_equity_screener(
 async def trigger_sync_equities():
     """Déclenche scraping equity screener"""
     from app.modules.equities_screener import sync_equities_screener
-    # En prod: envoyer à Celery
-    # sync_equities_screener.delay()
-    # En dev: exécuter direct
-    count = await sync_equities_screener()
-    return {"status": "success", "scraped": count}
+        # Envoyer la tâche au worker Celery
+    from app.tasks.equity_tasks import celery_sync_equities
+    task = celery_sync_equities.delay()
+    return {"status": "success", "message": "Equity screener sync triggered", "task_id": task.id}
