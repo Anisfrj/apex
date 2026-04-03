@@ -6,7 +6,7 @@ import pandas as pd
 from typing import List, Dict, Optional
 from datetime import datetime
 import asyncio
-from app.core.database import get_db_connection
+from ..core.database import get_db_connection
 
 def get_sp500_tickers() -> List[str]:
     """Récupère S&P 500 depuis Wikipedia"""
