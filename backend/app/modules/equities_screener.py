@@ -12,7 +12,7 @@ def get_sp500_tickers() -> List[str]:
     """Récupère S&P 500 depuis Wikipedia"""
     try:
         url = 'https://en.wikipedia.org/wiki/List_of_S%26P_500_companies'
-        tables = pd.read_html(url, storage_options={'User-Agent': rn df['Symbol'].str.replace('.', '-').tolist()
+                tables = pd.read_html(url, storage_options={'User-Agent': 'Mozilla/5.0'})
     except Exception as e:
         print(f"Erreur scraping S&P 500: {e}")
         return []
