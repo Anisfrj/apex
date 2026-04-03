@@ -1,5 +1,5 @@
 from celery import shared_task
-from app.modules.equities_screener import sync_equities_screener
+from ..modules.equities_screener import sync_equities_screener
 import asyncio
 
 @shared_task(name="sync_equities_screener")
