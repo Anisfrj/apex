@@ -1,7 +1,9 @@
 """FastAPI API routes — Dashboard data endpoints."""
 
 from datetime import date, timedelta
+from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc, func, text
 
@@ -18,6 +20,7 @@ from app.services.ideas import (
     generate_ideas_from_signals
 )
 from ..services.ai_summary import generate_ai_summary
+
 logger = get_logger("api")
 
 router = APIRouter(prefix="/api", tags=["dashboard"])
@@ -35,7 +38,6 @@ async def health_check():
 @router.get("/status")
 async def system_status(db: AsyncSession = Depends(get_db)):
     """Vue globale de l'état du système."""
-    # Count records per module
     macro_count = await db.execute(select(func.count(MacroSeries.id)))
     sector_count = await db.execute(select(func.count(SectorETF.id)))
     stock_count = await db.execute(select(func.count(StockFundamentals.id)))
@@ -43,13 +45,8 @@ async def system_status(db: AsyncSession = Depends(get_db)):
     insider_count = await db.execute(select(func.count(InsiderTransaction.id)))
     alert_count = await db.execute(select(func.count(AlertLog.id)))
 
-    # Latest update per module
-    macro_latest = await db.execute(
-        select(func.max(MacroSeries.created_at))
-    )
-    insider_latest = await db.execute(
-        select(func.max(InsiderTransaction.created_at))
-    )
+    macro_latest = await db.execute(select(func.max(MacroSeries.created_at)))
+    insider_latest = await db.execute(select(func.max(InsiderTransaction.created_at)))
 
     return {
         "modules": {
@@ -99,7 +96,6 @@ async def get_macro_data(
 @router.get("/sectors")
 async def get_sector_data(db: AsyncSession = Depends(get_db)):
     """Dernières données sectorielles avec MM200 et Force Relative."""
-    # Get latest record for each ETF
     results = []
     for symbol in SECTOR_ETFS:
         result = await db.execute(
@@ -120,15 +116,193 @@ async def get_sector_data(db: AsyncSession = Depends(get_db)):
                 "date": row.date.isoformat(),
             })
 
-    # Sort by relative strength descending
     results.sort(key=lambda x: x.get("relative_strength_30d") or 0, reverse=True)
     return results
 
 
 # ═══════════════════════════════════════════════════
-# MODULE 3a: SCREENER ACTIONS
+# MODULE 3a: SCREENER ACTIONS — STATIQUES (avant /{symbol})
 # ═══════════════════════════════════════════════════
 
+class StockScreenerItem(BaseModel):
+    symbol: str
+    company_name: Optional[str] = None
+    sector: Optional[str] = None
+    fiscal_date: str
+    market_cap: Optional[float] = None
+    price: Optional[float] = None
+    pe_ttm: Optional[float] = None
+    pb: Optional[float] = None
+    roic: Optional[float] = None
+    free_cash_flow: Optional[float] = None
+    total_debt: Optional[float] = None
+    total_equity: Optional[float] = None
+    rev_cagr_3y: Optional[float] = None
+    eps_cagr_3y: Optional[float] = None
+    perf_6m: Optional[float] = None
+    perf_12m: Optional[float] = None
+    dividend_yield: Optional[float] = None
+    payout_ratio: Optional[float] = None
+    insider_net_buy_usd_6m: Optional[float] = None
+    insider_buy_trades_6m: Optional[int] = None
+
+
+class StockScreenerResponse(BaseModel):
+    results: List[StockScreenerItem]
+    count: int
+    page: int
+    page_size: int
+    has_more: bool
+
+
+# FIX #1: /stocks/screener déclaré AVANT /stocks/{symbol}
+@router.get("/stocks/screener", response_model=StockScreenerResponse)
+async def stocks_screener(
+    sector: Optional[List[str]] = Query(default=None),
+    min_market_cap: Optional[float] = Query(default=None),
+    max_market_cap: Optional[float] = Query(default=None),
+    max_pe: Optional[float] = Query(default=None),
+    max_pb: Optional[float] = Query(default=None),
+    min_roic: Optional[float] = Query(default=None),
+    min_fcf: Optional[float] = Query(default=None),
+    max_debt_to_equity: Optional[float] = Query(default=None),
+    min_rev_cagr_3y: Optional[float] = Query(default=None),
+    min_eps_cagr_3y: Optional[float] = Query(default=None),
+    min_perf_12m: Optional[float] = Query(default=None),
+    min_dividend_yield: Optional[float] = Query(default=None),
+    max_payout_ratio: Optional[float] = Query(default=None),
+    min_insider_net_buy_usd_6m: Optional[float] = Query(default=None),
+    min_insider_buy_trades_6m: Optional[int] = Query(default=None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Screener multi-facteurs: value, quality, growth, momentum, dividendes, insiders.
+    Un enregistrement par action (dernier fiscal_date).
+    """
+    subq = (
+        select(
+            StockFundamentals.symbol,
+            func.max(StockFundamentals.fiscal_date).label("max_date"),
+        )
+        .group_by(StockFundamentals.symbol)
+        .subquery()
+    )
+
+    query = (
+        select(StockFundamentals)
+        .join(
+            subq,
+            (StockFundamentals.symbol == subq.c.symbol)
+            & (StockFundamentals.fiscal_date == subq.c.max_date),
+        )
+    )
+
+    if sector:
+        query = query.where(StockFundamentals.sector.in_(sector))
+    if min_market_cap is not None:
+        query = query.where(StockFundamentals.market_cap >= min_market_cap)
+    if max_market_cap is not None:
+        query = query.where(StockFundamentals.market_cap <= max_market_cap)
+    if max_pe is not None:
+        query = query.where(StockFundamentals.pe_ttm <= max_pe)
+    if max_pb is not None:
+        query = query.where(StockFundamentals.pb <= max_pb)
+    if min_roic is not None:
+        query = query.where(StockFundamentals.roic >= min_roic)
+    if min_fcf is not None:
+        query = query.where(StockFundamentals.free_cash_flow >= min_fcf)
+    if max_debt_to_equity is not None:
+        query = query.where(
+            (StockFundamentals.total_equity > 0)
+            & (StockFundamentals.total_debt / StockFundamentals.total_equity <= max_debt_to_equity)
+        )
+    if min_rev_cagr_3y is not None:
+        query = query.where(StockFundamentals.rev_cagr_3y >= min_rev_cagr_3y)
+    if min_eps_cagr_3y is not None:
+        query = query.where(StockFundamentals.eps_cagr_3y >= min_eps_cagr_3y)
+    if min_perf_12m is not None:
+        query = query.where(StockFundamentals.perf_12m >= min_perf_12m)
+    if min_dividend_yield is not None:
+        query = query.where(StockFundamentals.dividend_yield >= min_dividend_yield)
+    if max_payout_ratio is not None:
+        query = query.where(StockFundamentals.payout_ratio <= max_payout_ratio)
+    if min_insider_net_buy_usd_6m is not None:
+        query = query.where(StockFundamentals.insider_net_buy_usd_6m >= min_insider_net_buy_usd_6m)
+    if min_insider_buy_trades_6m is not None:
+        query = query.where(StockFundamentals.insider_buy_trades_6m >= min_insider_buy_trades_6m)
+
+    count_query = select(func.count()).select_from(query.subquery())
+    total_result = await db.execute(count_query)
+    total = total_result.scalar() or 0
+
+    query = query.order_by(desc(StockFundamentals.market_cap))
+    query = query.offset((page - 1) * page_size).limit(page_size)
+
+    result = await db.execute(query)
+    rows = result.scalars().all()
+
+    items: list[StockScreenerItem] = [
+        StockScreenerItem(
+            symbol=r.symbol,
+            company_name=r.company_name,
+            sector=r.sector,
+            fiscal_date=r.fiscal_date.isoformat(),
+            market_cap=r.market_cap,
+            price=r.price,
+            pe_ttm=r.pe_ttm,
+            pb=r.pb,
+            roic=r.roic,
+            free_cash_flow=r.free_cash_flow,
+            total_debt=r.total_debt,
+            total_equity=r.total_equity,
+            rev_cagr_3y=r.rev_cagr_3y,
+            eps_cagr_3y=r.eps_cagr_3y,
+            perf_6m=r.perf_6m,
+            perf_12m=r.perf_12m,
+            dividend_yield=r.dividend_yield,
+            payout_ratio=r.payout_ratio,
+            insider_net_buy_usd_6m=r.insider_net_buy_usd_6m,
+            insider_buy_trades_6m=r.insider_buy_trades_6m,
+        )
+        for r in rows
+    ]
+
+    return StockScreenerResponse(
+        results=items,
+        count=total,
+        page=page,
+        page_size=page_size,
+        has_more=page * page_size < total,
+    )
+
+
+# FIX #1: /stocks/{symbol}/ai-summary déclaré AVANT /stocks/{symbol}
+@router.get("/stocks/{symbol}/ai-summary")
+async def get_ai_summary(symbol: str, db: AsyncSession = Depends(get_db)):
+    """Génère un résumé analyste IA pour un ticker via Groq LLM."""
+    symbol = symbol.upper()
+
+    result = await db.execute(
+        select(StockFundamentals)
+        .where(StockFundamentals.symbol == symbol)
+        .order_by(StockFundamentals.fiscal_date.desc())
+        .limit(1)
+    )
+    stock = result.scalar_one_or_none()
+
+    summary = await generate_ai_summary(
+        symbol=symbol,
+        company_name=stock.company_name if stock else None,
+        roic=stock.roic if stock else None,
+        fcf=stock.free_cash_flow if stock else None,
+        sector=stock.sector if stock else None,
+    )
+    return {"symbol": symbol, **summary}
+
+
+# FIX #1: /stocks/{symbol} déclaré EN DERNIER parmi les routes /stocks/
 @router.get("/stocks/{symbol}")
 async def get_stock_fundamentals(symbol: str, db: AsyncSession = Depends(get_db)):
     """Fondamentaux d'une action spécifique."""
@@ -170,17 +344,14 @@ async def get_crypto_data(
     db: AsyncSession = Depends(get_db),
 ):
     """Top protocoles DeFi par TVL."""
-    today = date.today().isoformat()
-    # Get today's or latest data
     query = (
         select(CryptoFundamentals)
         .order_by(desc(CryptoFundamentals.date))
-        .limit(limit * 2)  # Over-fetch to handle duplicates
+        .limit(limit * 2)
     )
     result = await db.execute(query)
     rows = result.scalars().all()
 
-    # Deduplicate by protocol (keep latest)
     seen = set()
     unique_rows = []
     for r in rows:
@@ -209,7 +380,6 @@ async def get_crypto_data(
         for r in unique_rows
     ]
 
-    # Sort
     sort_key = sort_by if sort_by in ("tvl", "tvl_change_1d", "mcap_fdv_ratio", "fees_24h") else "tvl"
     data.sort(key=lambda x: x.get(sort_key) or 0, reverse=True)
     return data
@@ -265,6 +435,36 @@ async def get_insider_transactions(
     ]
 
 
+# FIX #2: /insiders/scored déclaré AVANT /insiders (route statique avant paramétrique)
+# FIX #2 + #3: rewritten with AsyncSession + text() — no more get_db_connection()
+@router.get("/insiders/scored")
+async def list_insiders_scored(
+    min_score: int = 30,
+    days: int = 7,
+    min_amount: float = 50000,
+    db: AsyncSession = Depends(get_db),
+):
+    """Transactions initiés enrichies avec score de conviction."""
+    query = text("""
+        SELECT
+            symbol, company_name, insider_name, insider_title,
+            transaction_code, total_value, roic, free_cash_flow,
+            pe_ttm, sector, insider_score, signal_label, filing_date
+        FROM v_insider_scored
+        WHERE filing_date >= CURRENT_DATE - CAST(:days AS INTEGER) * INTERVAL '1 day'
+          AND total_value >= :min_amount
+          AND insider_score >= :min_score
+        ORDER BY insider_score DESC, total_value DESC
+    """)
+    result = await db.execute(query, {
+        "days": days,
+        "min_amount": min_amount,
+        "min_score": min_score,
+    })
+    rows = result.mappings().all()
+    return [dict(row) for row in rows]
+
+
 # ═══════════════════════════════════════════════════
 # ALERTES LOG
 # ═══════════════════════════════════════════════════
@@ -301,13 +501,152 @@ async def get_alert_logs(
     ]
 
 
+# FIX #2: /alerts/enriched rewritten with AsyncSession + text()
+@router.get("/alerts/enriched")
+async def list_alerts_enriched(
+    status: str = None,
+    limit: int = 50,
+    db: AsyncSession = Depends(get_db),
+):
+    """Alertes enrichies avec champs JSONB dépliés."""
+    if status:
+        raw_query = text("""
+            SELECT
+                al.id, al.alert_type, al.symbol, al.trigger,
+                al.status, al.severity, al.channel,
+                al.details::jsonb->>'score_final'   AS score_final,
+                al.details::jsonb->>'sector'         AS sector,
+                al.details::jsonb->>'sector_etf'     AS sector_etf,
+                al.details::jsonb->>'conviction'     AS conviction,
+                al.idea_id,
+                al.created_at, al.telegram_sent
+            FROM alert_logs al
+            WHERE al.status = :status
+            ORDER BY al.created_at DESC
+            LIMIT :limit
+        """)
+        result = await db.execute(raw_query, {"status": status, "limit": limit})
+    else:
+        raw_query = text("""
+            SELECT
+                al.id, al.alert_type, al.symbol, al.trigger,
+                al.status, al.severity, al.channel,
+                al.details::jsonb->>'score_final'   AS score_final,
+                al.details::jsonb->>'sector'         AS sector,
+                al.details::jsonb->>'sector_etf'     AS sector_etf,
+                al.details::jsonb->>'conviction'     AS conviction,
+                al.idea_id,
+                al.created_at, al.telegram_sent
+            FROM alert_logs al
+            ORDER BY al.created_at DESC
+            LIMIT :limit
+        """)
+        result = await db.execute(raw_query, {"limit": limit})
+
+    rows = result.mappings().all()
+    return [dict(row) for row in rows]
+
+
+# ═══════════════════════════════════════════════════
+# MODULE 3a: SCREENER EQUITIES (raw SQL)
+# FIX #3: rewritten with AsyncSession + text() — no more asyncpg conn.fetch()
+# ═══════════════════════════════════════════════════
+
+@router.get("/screener/equities")
+async def get_equity_screener(
+    sector: str | None = None,
+    min_market_cap: float | None = None,
+    max_pe: float | None = None,
+    min_roe: float | None = None,
+    above_sma200: bool | None = None,
+    min_price: float | None = None,
+    max_price: float | None = None,
+    search: str | None = None,
+    limit: int = 100,
+    db: AsyncSession = Depends(get_db),
+):
+    """Screener actions avec filtres — version SQLAlchemy async."""
+    conditions = ["1=1"]
+    params: dict = {}
+
+    if sector:
+        conditions.append("sector = :sector")
+        params["sector"] = sector
+
+    if min_market_cap is not None:
+        conditions.append("market_cap >= :min_market_cap")
+        params["min_market_cap"] = min_market_cap
+
+    if max_pe is not None:
+        conditions.append("pe_ratio <= :max_pe AND pe_ratio > 0")
+        params["max_pe"] = max_pe
+
+    if min_roe is not None:
+        conditions.append("roe >= :min_roe")
+        params["min_roe"] = min_roe
+
+    if above_sma200 is True:
+        conditions.append("price > sma_200 AND sma_200 IS NOT NULL")
+
+    if min_price is not None:
+        conditions.append("price >= :min_price")
+        params["min_price"] = min_price
+
+    if max_price is not None:
+        conditions.append("price <= :max_price")
+        params["max_price"] = max_price
+
+    if search:
+        conditions.append("(symbol ILIKE :search OR company_name ILIKE :search)")
+        params["search"] = f"%{search.upper()}%"
+
+    safe_limit = min(limit, 500)
+    raw_query = text(f"""
+        SELECT * FROM equities_fundamentals
+        WHERE {' AND '.join(conditions)}
+        ORDER BY market_cap DESC NULLS LAST
+        LIMIT {safe_limit}
+    """)
+
+    result = await db.execute(raw_query, params)
+    rows = result.mappings().all()
+    return [dict(row) for row in rows]
+
+
+# ═══════════════════════════════════════════════════
+# IDEAS / OPPORTUNITÉS
+# ═══════════════════════════════════════════════════
+
+@router.get("/ideas")
+async def list_ideas(
+    label: str = None,
+    sector: str = None,
+    min_score: int = 0,
+    db: AsyncSession = Depends(get_db),
+):
+    return await get_ideas_ranked(db=db, label=label, sector=sector, min_score=min_score)
+
+
+@router.get("/ideas/{idea_id}")
+async def get_idea(idea_id: int, db: AsyncSession = Depends(get_db)):
+    idea = await get_idea_detail(db=db, idea_id=idea_id)
+    if not idea:
+        raise HTTPException(status_code=404, detail="Idea not found")
+    return idea
+
+
+@router.post("/ideas/generate")
+async def trigger_idea_generation(db: AsyncSession = Depends(get_db)):
+    nb = await generate_ideas_from_signals(db=db)
+    return {"generated": nb}
+
+
 # ═══════════════════════════════════════════════════
 # MANUAL TRIGGERS (for testing / on-demand)
 # ═══════════════════════════════════════════════════
 
 @router.post("/trigger/sync-macro")
 async def trigger_sync_macro():
-    """Déclenche manuellement la synchro macro."""
     from ..tasks.scheduled import task_sync_macro
     task = task_sync_macro.delay()
     return {"task_id": task.id, "status": "queued"}
@@ -347,6 +686,7 @@ async def trigger_crypto_alerts():
     task = task_process_crypto_alerts.delay()
     return {"task_id": task.id, "status": "queued"}
 
+
 @router.post("/trigger/sync-stocks")
 async def trigger_sync_stocks():
     from ..tasks.scheduled import task_sync_stocks
@@ -354,398 +694,8 @@ async def trigger_sync_stocks():
     return {"task_id": task.id, "status": "queued"}
 
 
-# ═══════════════════════════════════════════════════
-# MODULE 3a: SCREENER ACTIONS — MULTI-FACTEURS
-# ═══════════════════════════════════════════════════
-
-from pydantic import BaseModel
-from typing import Optional, List
-
-class StockScreenerItem(BaseModel):
-    symbol: str
-    company_name: Optional[str] = None
-    sector: Optional[str] = None
-    fiscal_date: str
-
-    # Pricing / taille
-    market_cap: Optional[float] = None
-    price: Optional[float] = None
-
-    # Value
-    pe_ttm: Optional[float] = None
-    pb: Optional[float] = None
-
-    # Quality
-    roic: Optional[float] = None
-    free_cash_flow: Optional[float] = None
-    total_debt: Optional[float] = None
-    total_equity: Optional[float] = None
-
-    # Growth
-    rev_cagr_3y: Optional[float] = None
-    eps_cagr_3y: Optional[float] = None
-
-    # Momentum
-    perf_6m: Optional[float] = None
-    perf_12m: Optional[float] = None
-
-    # Dividendes
-    dividend_yield: Optional[float] = None
-    payout_ratio: Optional[float] = None
-
-    # Insiders
-    insider_net_buy_usd_6m: Optional[float] = None
-    insider_buy_trades_6m: Optional[int] = None
-
-
-class StockScreenerResponse(BaseModel):
-    results: List[StockScreenerItem]
-    count: int
-    page: int
-    page_size: int
-    has_more: bool
-
-# ── Ideas / Opportunités ────────────────────────────────
-
-@router.get("/ideas")
-async def list_ideas(
-    label: str = None,       # TOP_PICK, WATCH, HOLD
-    sector: str = None,
-    min_score: int = 0
-):
-    return await get_ideas_ranked(label=label, sector=sector, min_score=min_score)
-
-
-@router.get("/ideas/{idea_id}")
-async def get_idea(idea_id: int):
-    return await get_idea_detail(idea_id)
-
-
-@router.post("/ideas/generate")
-async def trigger_idea_generation():
-    nb = await generate_ideas_from_signals()
-    return {"generated": nb}
-
-
-# ── Insider scored (pour le Traqueur) ──────────────────
-
-@router.get("/insiders/scored")
-async def list_insiders_scored(
-    min_score: int = 30,
-    days: int = 7,
-    min_amount: float = 50000
-):
-    query = """
-        SELECT
-            symbol, company_name, insider_name, insider_title,
-            transaction_code, total_value, roic, free_cash_flow,
-            pe_ttm, sector, insider_score, signal_label, filing_date
-        FROM v_insider_scored
-        WHERE filing_date >= CURRENT_DATE - %(days)s * INTERVAL '1 day'
-          AND total_value >= %(min_amount)s
-          AND insider_score >= %(min_score)s
-        ORDER BY insider_score DESC, total_value DESC
-    """
-    async with get_db_connection() as conn:
-        async with conn.cursor() as cur:
-            await cur.execute(query, {
-                "days": days,
-                "min_amount": min_amount,
-                "min_score": min_score
-            })
-            rows = await cur.fetchall()
-            cols = [desc[0] for desc in cur.description]
-            return [dict(zip(cols, row)) for row in rows]
-
-
-# ── Alertes enrichies ───────────────────────────────────
-
-@router.get("/alerts/enriched")
-async def list_alerts_enriched(
-    status: str = None,
-    limit: int = 50
-):
-    query = """
-        SELECT
-            al.id, al.alert_type, al.symbol, al.trigger,
-            al.status, al.severity, al.channel,
-            al.details::jsonb->>'score_final'   AS score_final,
-            al.details::jsonb->>'sector'         AS sector,
-            al.details::jsonb->>'sector_etf'     AS sector_etf,
-            al.details::jsonb->>'conviction'     AS conviction,
-            al.idea_id,
-            al.created_at, al.telegram_sent
-        FROM alert_logs al
-        {where}
-        ORDER BY al.created_at DESC
-        LIMIT %(limit)s
-    """
-    where = "WHERE al.status = %(status)s" if status else ""
-    query = query.format(where=where)
-
-    params = {"limit": limit}
-    if status:
-        params["status"] = status
-
-    async with get_db_connection() as conn:
-        async with conn.cursor() as cur:
-            await cur.execute(query, params)
-            rows = await cur.fetchall()
-            cols = [desc[0] for desc in cur.description]
-            return [dict(zip(cols, row)) for row in rows]
-
-
-@router.get("/stocks/screener", response_model=StockScreenerResponse)
-async def stocks_screener(
-    # Univers
-    sector: Optional[List[str]] = Query(default=None),
-    min_market_cap: Optional[float] = Query(default=None),
-    max_market_cap: Optional[float] = Query(default=None),
-
-    # Value
-    max_pe: Optional[float] = Query(default=None),
-    max_pb: Optional[float] = Query(default=None),
-
-    # Quality
-    min_roic: Optional[float] = Query(default=None),
-    min_fcf: Optional[float] = Query(default=None),
-    max_debt_to_equity: Optional[float] = Query(default=None),
-
-    # Growth
-    min_rev_cagr_3y: Optional[float] = Query(default=None),
-    min_eps_cagr_3y: Optional[float] = Query(default=None),
-
-    # Momentum
-    min_perf_12m: Optional[float] = Query(default=None),
-
-    # Dividendes
-    min_dividend_yield: Optional[float] = Query(default=None),
-    max_payout_ratio: Optional[float] = Query(default=None),
-
-    # Insiders
-    min_insider_net_buy_usd_6m: Optional[float] = Query(default=None),
-    min_insider_buy_trades_6m: Optional[int] = Query(default=None),
-
-    page: int = Query(1, ge=1),
-    page_size: int = Query(50, ge=1, le=200),
-    db: AsyncSession = Depends(get_db),
-):
-    """
-    Screener multi-facteurs: value, quality, growth, momentum, dividendes, insiders.
-    Un enregistrement par action (dernier fiscal_date).
-    """
-    # Sous-requête: dernier enregistrement par symbole
-    subq = (
-        select(
-            StockFundamentals.symbol,
-            func.max(StockFundamentals.fiscal_date).label("max_date"),
-        )
-        .group_by(StockFundamentals.symbol)
-        .subquery()
-    )
-
-    query = (
-        select(StockFundamentals)
-        .join(
-            subq,
-            (StockFundamentals.symbol == subq.c.symbol)
-            & (StockFundamentals.fiscal_date == subq.c.max_date),
-        )
-    )
-
-    # Univers
-    if sector:
-        query = query.where(StockFundamentals.sector.in_(sector))
-    if min_market_cap is not None:
-        query = query.where(StockFundamentals.market_cap >= min_market_cap)
-    if max_market_cap is not None:
-        query = query.where(StockFundamentals.market_cap <= max_market_cap)
-
-    # Value
-    if max_pe is not None:
-        query = query.where(StockFundamentals.pe_ttm <= max_pe)
-    if max_pb is not None:
-        query = query.where(StockFundamentals.pb <= max_pb)
-
-    # Quality
-    if min_roic is not None:
-        query = query.where(StockFundamentals.roic >= min_roic)
-    if min_fcf is not None:
-        query = query.where(StockFundamentals.free_cash_flow >= min_fcf)
-    if max_debt_to_equity is not None:
-        # On calcule dette / equity à la volée sur la requête
-        query = query.where(
-            (StockFundamentals.total_equity > 0)
-            & (StockFundamentals.total_debt / StockFundamentals.total_equity <= max_debt_to_equity)
-        )
-
-    # Growth
-    if min_rev_cagr_3y is not None:
-        query = query.where(StockFundamentals.rev_cagr_3y >= min_rev_cagr_3y)
-    if min_eps_cagr_3y is not None:
-        query = query.where(StockFundamentals.eps_cagr_3y >= min_eps_cagr_3y)
-
-    # Momentum
-    if min_perf_12m is not None:
-        query = query.where(StockFundamentals.perf_12m >= min_perf_12m)
-
-    # Dividendes
-    if min_dividend_yield is not None:
-        query = query.where(StockFundamentals.dividend_yield >= min_dividend_yield)
-    if max_payout_ratio is not None:
-        query = query.where(StockFundamentals.payout_ratio <= max_payout_ratio)
-
-    # Insiders
-    if min_insider_net_buy_usd_6m is not None:
-        query = query.where(
-            StockFundamentals.insider_net_buy_usd_6m >= min_insider_net_buy_usd_6m
-        )
-    if min_insider_buy_trades_6m is not None:
-        query = query.where(
-            StockFundamentals.insider_buy_trades_6m >= min_insider_buy_trades_6m
-        )
-
-    # Count
-    count_query = select(func.count()).select_from(query.subquery())
-    total_result = await db.execute(count_query)
-    total = total_result.scalar() or 0
-
-    # Pagination + tri par market cap décroissante
-    query = query.order_by(desc(StockFundamentals.market_cap))
-    query = query.offset((page - 1) * page_size).limit(page_size)
-
-    result = await db.execute(query)
-    rows = result.scalars().all()
-
-    items: list[StockScreenerItem] = []
-    for r in rows:
-        items.append(
-            StockScreenerItem(
-                symbol=r.symbol,
-                company_name=r.company_name,
-                sector=r.sector,
-                fiscal_date=r.fiscal_date.isoformat(),
-                market_cap=r.market_cap,
-                price=r.price,
-                pe_ttm=r.pe_ttm,
-                pb=r.pb,
-                roic=r.roic,
-                free_cash_flow=r.free_cash_flow,
-                total_debt=r.total_debt,
-                total_equity=r.total_equity,
-                rev_cagr_3y=r.rev_cagr_3y,
-                eps_cagr_3y=r.eps_cagr_3y,
-                perf_6m=r.perf_6m,
-                perf_12m=r.perf_12m,
-                dividend_yield=r.dividend_yield,
-                payout_ratio=r.payout_ratio,
-                insider_net_buy_usd_6m=r.insider_net_buy_usd_6m,
-                insider_buy_trades_6m=r.insider_buy_trades_6m,
-            )
-        )
-
-    return StockScreenerResponse(
-        results=items,
-        count=total,
-        page=page,
-        page_size=page_size,
-        has_more=page * page_size < total,
-    )
-
-# ════════════════════════════════════════════
-# AI SUMMARY — Résumé LLM d'un ticker
-# ════════════════════════════════════════════
-
-@router.get("/stocks/{symbol}/ai-summary")
-async def get_ai_summary(symbol: str, db: AsyncSession = Depends(get_db)):
-    """Génère un résumé analyste IA pour un ticker via Groq LLM."""
-    symbol = symbol.upper()
-
-    # Récupérer les derniers fondamentaux du ticker depuis la DB
-    result = await db.execute(
-        select(StockFundamentals)
-        .where(StockFundamentals.symbol == symbol)
-        .order_by(StockFundamentals.fiscal_date.desc())
-        .limit(1)
-    )
-    stock = result.scalar_one_or_none()
-
-    summary = await generate_ai_summary(
-        symbol=symbol,
-        company_name=stock.company_name if stock else None,
-        roic=stock.roic if stock else None,
-        fcf=stock.free_cash_flow if stock else None,
-        sector=stock.sector if stock else None,
-    )
-    return {"symbol": symbol, **summary}
- # Ajouter dans routes.py
-
-@router.get("/screener/equities")
-async def get_equity_screener(
-    sector: str | None = None,
-    min_market_cap: float | None = None,
-    max_pe: float | None = None,
-    min_roe: float | None = None,
-    above_sma200: bool | None = None,
-    min_price: float | None = None,
-    max_price: float | None = None,
-    search: str | None = None,
-    limit: int = 100
-):
-    """
-    Screener actions avec filtres
-    """
-    conn = get_db_connection()
-    try:
-        conditions = ["1=1"]
-        params = []
-        
-        if sector:
-            params.append(sector)
-            conditions.append(f"sector = ${len(params)}")
-        
-        if min_market_cap:
-            params.append(min_market_cap)
-            conditions.append(f"market_cap >= ${len(params)}")
-        
-        if max_pe:
-            params.append(max_pe)
-            conditions.append(f"pe_ratio <= ${len(params)} AND pe_ratio > 0")
-        
-        if min_roe:
-            params.append(min_roe)
-            conditions.append(f"roe >= ${len(params)}")
-        
-        if above_sma200:
-            conditions.append("price > sma_200 AND sma_200 IS NOT NULL")
-        
-        if min_price:
-            params.append(min_price)
-            conditions.append(f"price >= ${len(params)}")
-        
-        if max_price:
-            params.append(max_price)
-            conditions.append(f"price <= ${len(params)}")
-        
-        if search:
-            params.append(f"%{search.upper()}%")
-            conditions.append(f"(symbol ILIKE ${len(params)} OR company_name ILIKE ${len(params)})")
-        
-        query = f"""
-            SELECT * FROM equities_fundamentals
-            WHERE {' AND '.join(conditions)}
-            ORDER BY market_cap DESC NULLS LAST
-            LIMIT {min(limit, 500)}
-        """
-        
-        rows = await conn.fetch(query, *params)
-        return [dict(r) for r in rows]
-    finally:
-        await conn.close()
-
 @router.post("/trigger/sync-equities")
 async def trigger_sync_equities():
-    """Déclenche scraping equity screener"""
     from ..tasks.equity_tasks import celery_sync_equities
     task = celery_sync_equities.delay()
     return {"status": "success", "message": "Equity screener sync triggered", "task_id": task.id}
