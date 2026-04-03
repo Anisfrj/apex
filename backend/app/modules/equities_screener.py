@@ -12,9 +12,7 @@ def get_sp500_tickers() -> List[str]:
     """Récupère S&P 500 depuis Wikipedia"""
     try:
         url = 'https://en.wikipedia.org/wiki/List_of_S%26P_500_companies'
-        tables = pd.read_html(url)
-        df = tables[0]
-        return df['Symbol'].str.replace('.', '-').tolist()
+        tables = pd.read_html(url, storage_options={'User-Agent': rn df['Symbol'].str.replace('.', '-').tolist()
     except Exception as e:
         print(f"Erreur scraping S&P 500: {e}")
         return []
@@ -23,12 +21,7 @@ def get_nasdaq100_tickers() -> List[str]:
     """Récupère NASDAQ 100 depuis Wikipedia"""
     try:
         url = 'https://en.wikipedia.org/wiki/Nasdaq-100'
-        tables = pd.read_html(url)
-        # Index peut varier, chercher table avec colonne "Ticker"
-        for table in tables:
-            if 'Ticker' in table.columns:
-                return table['Ticker'].str.replace('.', '-').tolist()
-        return []
+        tables = pd.read_html(url, storage_options={'User-Agent': 'Mozilla/5.0'})        # Index peut varier, chercher table avec colonne "Ticker"
     except Exception as e:
         print(f"Erreur scraping NASDAQ 100: {e}")
         return []
