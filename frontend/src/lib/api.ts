@@ -82,6 +82,8 @@ export interface InsiderTx {
   insider_name: string
   insider_title: string | null
   transaction_date: string | null
+  transaction_code: string | null        // ex: "P" (Purchase), "S" (Sale), "A" (Award)
+  acquired_disposed: 'A' | 'D' | null   // Acquired ou Disposed
   shares: number | null
   price_per_share: number | null
   total_value: number | null
@@ -143,6 +145,8 @@ export interface InsiderScored {
   company_name: string
   insider_name: string
   insider_title: string
+  transaction_code: string | null
+  acquired_disposed: 'A' | 'D' | null
   total_value: number
   roic: number | null
   free_cash_flow: number | null
