@@ -746,8 +746,6 @@ async def get_equity_screener(
 @router.post("/trigger/sync-equities")
 async def trigger_sync_equities():
     """Déclenche scraping equity screener"""
-    
-        
-        from ..tasks.equity_tasks import celery_sync_equities
+    from ..tasks.equity_tasks import celery_sync_equities
     task = celery_sync_equities.delay()
     return {"status": "success", "message": "Equity screener sync triggered", "task_id": task.id}
