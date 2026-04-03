@@ -37,6 +37,7 @@ export function useCrypto(sortBy: string = 'tvl', limit: number = 50) {
   })
 }
 
+/** Insiders bruts — /api/insiders (pas de score) */
 export function useInsiders(days: number = 7, minAmount: number = 0) {
   return useQuery({
     queryKey: ['insiders', days, minAmount],
@@ -44,6 +45,23 @@ export function useInsiders(days: number = 7, minAmount: number = 0) {
       days: String(days),
       min_amount: String(minAmount),
     }),
+  })
+}
+
+/** Insiders scorés — /api/insiders/scored (avec insider_score + signal_label) */
+export function useInsidersScored(
+  minScore: number = 30,
+  days: number = 7,
+  minAmount: number = 50_000,
+) {
+  return useQuery({
+    queryKey: ['insiders-scored', minScore, days, minAmount],
+    queryFn: () => api.getInsidersScored({
+      min_score: minScore,
+      days,
+      min_amount: minAmount,
+    }),
+    staleTime: 60_000,
   })
 }
 
@@ -76,7 +94,7 @@ export function useAISummary(symbol: string) {
     queryKey: ['ai-summary', symbol],
     queryFn: () => api.getAISummary(symbol),
     enabled: !!symbol,
-    staleTime: 5 * 60 * 1000, // Cache 5 minutes (appel LLM = pas gratuit)
+    staleTime: 5 * 60 * 1000,
     retry: 1,
   })
 }
