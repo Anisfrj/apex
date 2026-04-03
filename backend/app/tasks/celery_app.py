@@ -10,7 +10,7 @@ celery_app = Celery(
     "apex_screener",
     broker=broker_url,
     result_backend=broker_url,
-    include=["app.tasks.scheduled"],
+    include=["app.tasks.scheduled"], "app.tasks.equity_tasks"],
 )
 
 celery_app.conf.update(
