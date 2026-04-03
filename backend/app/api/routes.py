@@ -122,7 +122,8 @@ async def get_sector_data(db: AsyncSession = Depends(get_db)):
 
 # ═══════════════════════════════════════════════════
 # MODULE 3a: SCREENER ACTIONS
-# ATTENTION: /stocks/screener DOIT être déclaré AVANT /stocks/{symbol}
+# RÈGLE: routes statiques AVANT routes paramétrées sur le même préfixe
+# /stocks/screener DOIT être déclaré AVANT /stocks/{symbol}
 # ═══════════════════════════════════════════════════
 
 class StockScreenerItem(BaseModel):
@@ -156,6 +157,7 @@ class StockScreenerResponse(BaseModel):
     has_more: bool
 
 
+# ✅ /stocks/screener — AVANT /stocks/{symbol}
 @router.get("/stocks/screener", response_model=StockScreenerResponse)
 async def stocks_screener(
     sector: Optional[List[str]] = Query(default=None),
@@ -278,6 +280,7 @@ async def stocks_screener(
     )
 
 
+# ✅ /stocks/{symbol} — APRÈS /stocks/screener
 @router.get("/stocks/{symbol}")
 async def get_stock_fundamentals(symbol: str, db: AsyncSession = Depends(get_db)):
     """Fondamentaux d'une action spécifique."""
@@ -384,8 +387,38 @@ async def get_crypto_data(
 
 # ═══════════════════════════════════════════════════
 # MODULE 4: INSIDER TRANSACTIONS
+# RÈGLE: /insiders/scored AVANT /insiders (pas de paramètre dynamique ici,
+# mais on garde l'ordre statique→dynamique par discipline)
 # ═══════════════════════════════════════════════════
 
+# ✅ /insiders/scored — AVANT /insiders
+@router.get("/insiders/scored")
+async def list_insiders_scored(
+    min_score: int = 30,
+    days: int = 7,
+    min_amount: float = 50000,
+    db: AsyncSession = Depends(get_db),
+):
+    """Transactions d'initiés enrichies avec score depuis la vue v_insider_scored."""
+    result = await db.execute(
+        text("""
+            SELECT
+                symbol, company_name, insider_name, insider_title,
+                transaction_code, total_value, roic, free_cash_flow,
+                pe_ttm, sector, insider_score, signal_label, filing_date
+            FROM v_insider_scored
+            WHERE filing_date >= CURRENT_DATE - CAST(:days AS INTEGER) * INTERVAL '1 day'
+              AND total_value >= :min_amount
+              AND insider_score >= :min_score
+            ORDER BY insider_score DESC, total_value DESC
+        """),
+        {"days": days, "min_amount": min_amount, "min_score": min_score},
+    )
+    rows = result.mappings().all()
+    return [dict(row) for row in rows]
+
+
+# ✅ /insiders — APRÈS /insiders/scored
 @router.get("/insiders")
 async def get_insider_transactions(
     days: int = Query(7, ge=1, le=365),
@@ -430,36 +463,43 @@ async def get_insider_transactions(
     ]
 
 
-@router.get("/insiders/scored")
-async def list_insiders_scored(
-    min_score: int = 30,
-    days: int = 7,
-    min_amount: float = 50000,
+# ═══════════════════════════════════════════════════
+# ALERTES LOG
+# RÈGLE: /alerts/enriched AVANT /alerts
+# ═══════════════════════════════════════════════════
+
+# ✅ /alerts/enriched — AVANT /alerts
+@router.get("/alerts/enriched")
+async def list_alerts_enriched(
+    status: str = None,
+    limit: int = 50,
     db: AsyncSession = Depends(get_db),
 ):
-    """Transactions d'initiés enrichies avec score depuis la vue v_insider_scored."""
-    result = await db.execute(
-        text("""
-            SELECT
-                symbol, company_name, insider_name, insider_title,
-                transaction_code, total_value, roic, free_cash_flow,
-                pe_ttm, sector, insider_score, signal_label, filing_date
-            FROM v_insider_scored
-            WHERE filing_date >= CURRENT_DATE - CAST(:days AS INTEGER) * INTERVAL '1 day'
-              AND total_value >= :min_amount
-              AND insider_score >= :min_score
-            ORDER BY insider_score DESC, total_value DESC
-        """),
-        {"days": days, "min_amount": min_amount, "min_score": min_score},
-    )
+    """Alertes enrichies avec champs JSON extraits."""
+    base_query = """
+        SELECT
+            al.id, al.alert_type, al.symbol, al.trigger,
+            al.status, al.severity, al.channel,
+            al.details::jsonb->>'score_final'   AS score_final,
+            al.details::jsonb->>'sector'         AS sector,
+            al.details::jsonb->>'sector_etf'     AS sector_etf,
+            al.details::jsonb->>'conviction'     AS conviction,
+            al.idea_id,
+            al.created_at, al.telegram_sent
+        FROM alert_logs al
+    """
+    params: dict = {"limit": limit}
+    if status:
+        base_query += " WHERE al.status = :status"
+        params["status"] = status
+    base_query += " ORDER BY al.created_at DESC LIMIT :limit"
+
+    result = await db.execute(text(base_query), params)
     rows = result.mappings().all()
     return [dict(row) for row in rows]
 
 
-# ═══════════════════════════════════════════════════
-# ALERTES LOG
-# ═══════════════════════════════════════════════════
-
+# ✅ /alerts — APRÈS /alerts/enriched
 @router.get("/alerts")
 async def get_alert_logs(
     alert_type: str = Query(None, description="Filter: equity or crypto"),
@@ -490,36 +530,6 @@ async def get_alert_logs(
         }
         for r in rows
     ]
-
-
-@router.get("/alerts/enriched")
-async def list_alerts_enriched(
-    status: str = None,
-    limit: int = 50,
-    db: AsyncSession = Depends(get_db),
-):
-    """Alertes enrichies avec champs JSON extraits."""
-    base_query = """
-        SELECT
-            al.id, al.alert_type, al.symbol, al.trigger,
-            al.status, al.severity, al.channel,
-            al.details::jsonb->>'score_final'   AS score_final,
-            al.details::jsonb->>'sector'         AS sector,
-            al.details::jsonb->>'sector_etf'     AS sector_etf,
-            al.details::jsonb->>'conviction'     AS conviction,
-            al.idea_id,
-            al.created_at, al.telegram_sent
-        FROM alert_logs al
-    """
-    params: dict = {"limit": limit}
-    if status:
-        base_query += " WHERE al.status = :status"
-        params["status"] = status
-    base_query += " ORDER BY al.created_at DESC LIMIT :limit"
-
-    result = await db.execute(text(base_query), params)
-    rows = result.mappings().all()
-    return [dict(row) for row in rows]
 
 
 # ═══════════════════════════════════════════════════
@@ -580,8 +590,10 @@ async def get_equity_screener(
 
 # ═══════════════════════════════════════════════════
 # IDEAS / OPPORTUNITÉS
+# RÈGLE: /ideas/generate (POST) et /ideas (GET) AVANT /ideas/{idea_id}
 # ═══════════════════════════════════════════════════
 
+# ✅ /ideas — AVANT /ideas/{idea_id}
 @router.get("/ideas")
 async def list_ideas(
     label: str = None,
@@ -592,18 +604,21 @@ async def list_ideas(
     return await get_ideas_ranked(db=db, label=label, sector=sector, min_score=min_score)
 
 
+# ✅ /ideas/generate — AVANT /ideas/{idea_id}
+# CRITIQUE: si déclaré après /ideas/{idea_id}, FastAPI match "generate" comme idea_id → 404
+@router.post("/ideas/generate")
+async def trigger_idea_generation(db: AsyncSession = Depends(get_db)):
+    nb = await generate_ideas_from_signals(db=db)
+    return {"generated": nb}
+
+
+# ✅ /ideas/{idea_id} — EN DERNIER sur le préfixe /ideas
 @router.get("/ideas/{idea_id}")
 async def get_idea(idea_id: int, db: AsyncSession = Depends(get_db)):
     idea = await get_idea_detail(idea_id=idea_id, db=db)
     if not idea:
         raise HTTPException(status_code=404, detail="Idea not found")
     return idea
-
-
-@router.post("/ideas/generate")
-async def trigger_idea_generation(db: AsyncSession = Depends(get_db)):
-    nb = await generate_ideas_from_signals(db=db)
-    return {"generated": nb}
 
 
 # ═══════════════════════════════════════════════════
